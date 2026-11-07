@@ -357,6 +357,15 @@ export class GameUI {
     return this.engineSelect?.value ?? "vosk";
   }
 
+  setSelectedEngine(engine) {
+    if (!this.engineSelect) {
+      return;
+    }
+
+    const nextEngine = engine === "webspeech" ? "webspeech" : "vosk";
+    this.engineSelect.value = nextEngine;
+  }
+
   setEngineStatus(message) {
     if (!this.engineStatus) {
       return;

@@ -36,6 +36,7 @@ const VOSK_GRAMMAR_PHRASES = [
 ];
 const MIC_RELEASE_GRACE_MS = 280;
 const VOSK_FINAL_DEDUP_WINDOW_MS = 900;
+const VOSK_SILENT_FALLBACK_MS = 3600;
 
 const ui = new GameUI();
 const speechService = new SpeechRecognitionService("fr-FR");
@@ -67,6 +68,8 @@ let lastAcceptedVoskFinalAtMs = 0;
 let exerciseFirstCapturedAtMs = null;
 let exerciseLastCapturedAtMs = null;
 let dynamicTimeline = null;
+let voskSilentWatchdogId = null;
+let voskReceivedSpeechSignal = false;
 
 const processedWebSpeechFinalChunkIds = new Set();
 
@@ -123,6 +126,8 @@ function writeSpeechDebugEvent(event) {
     "vosk-mic-request-start": `[${clock}] vosk-mic-request-start`,
     "vosk-mic-request-success": `[${clock}] vosk-mic-request-success`,
     "vosk-mic-request-failed": `[${clock}] vosk-mic-request-failed`,
+    "vosk-mic-track-settings": `[${clock}] vosk-mic-track-settings (sampleRate=${event.sampleRate ?? "?"}, channels=${event.channelCount ?? "?"}, ec=${event.echoCancellation ?? "?"}, ns=${event.noiseSuppression ?? "?"}, agc=${event.autoGainControl ?? "?"})`,
+    "vosk-grammar-disabled-mobile": `[${clock}] vosk-grammar-disabled-mobile`,
     "vosk-recognizer-created": `[${clock}] vosk-recognizer-created (grammar=${event.grammarApplied ? "yes" : "no"})`,
     "vosk-partial": `[${clock}] vosk-partial: "${event.text ?? ""}"`,
     "vosk-final": `[${clock}] vosk-final: "${event.text ?? ""}"`,
@@ -197,9 +202,56 @@ async function preloadVoskModelInBackground() {
 }
 
 function stopAllRecognition() {
+  clearVoskSilentWatchdog();
   speechService.stop();
   voskService.stop();
   ui.setListening(false);
+}
+
+function clearVoskSilentWatchdog() {
+  if (voskSilentWatchdogId === null) {
+    return;
+  }
+
+  window.clearTimeout(voskSilentWatchdogId);
+  voskSilentWatchdogId = null;
+}
+
+function armVoskSilentWatchdog() {
+  clearVoskSilentWatchdog();
+  voskReceivedSpeechSignal = false;
+
+  voskSilentWatchdogId = window.setTimeout(() => {
+    voskSilentWatchdogId = null;
+
+    if (!exerciseActive || !micPressActive || selectedEngine !== "vosk") {
+      return;
+    }
+
+    if (voskReceivedSpeechSignal) {
+      return;
+    }
+
+    ui.appendSpeechDebugLine("Aucun resultat Vosk detecte: bascule auto Web Speech.");
+
+    if (!speechService.isSupported()) {
+      ui.setFeedback("Vosk muet sur cet appareil et Web Speech indisponible.", "error");
+      return;
+    }
+
+    selectedEngine = "webspeech";
+    ui.setSelectedEngine("webspeech");
+    ui.setEngineStatus("Bascule auto vers Web Speech (Vosk muet sur cet appareil)");
+
+    stopAllRecognition();
+    ui.setListening(true);
+    const switched = startWebSpeechContinuous();
+    if (switched) {
+      ui.setFeedback("Bascule auto Web Speech active. Continue de parler.", "success");
+    } else {
+      ui.setFeedback("Echec de la bascule auto vers Web Speech.", "error");
+    }
+  }, VOSK_SILENT_FALLBACK_MS);
 }
 
 function clearPendingMicStop() {
@@ -743,6 +795,9 @@ function handleVoskPartial(payload) {
     return;
   }
 
+  voskReceivedSpeechSignal = true;
+  clearVoskSilentWatchdog();
+
   const partial = normalizeSpeechText(payload?.text ?? "");
   if (partial) {
     registerDetectedSound(partial);
@@ -759,6 +814,9 @@ function handleVoskFinal(payload) {
   if (!exerciseActive) {
     return;
   }
+
+  voskReceivedSpeechSignal = true;
+  clearVoskSilentWatchdog();
 
   const normalizedFinal = normalizeSpeechText(payload?.text ?? "");
   if (!normalizedFinal) {
@@ -786,6 +844,7 @@ function handleVoskFinal(payload) {
 }
 
 function handleVoskError(error) {
+  clearVoskSilentWatchdog();
   const hardFailureReasons = ["mic-permission-failed", "accept-waveform-failed", "vosk-error", "start-failed"];
   if (hardFailureReasons.includes(error.reason)) {
     exerciseActive = false;
@@ -840,6 +899,7 @@ async function startVoskContinuous() {
   });
 
   if (!result.ok) {
+    clearVoskSilentWatchdog();
     ui.setListening(false);
 
     if (["model-load-failed", "model-not-found", "model-fetch-error"].includes(result.reason)) {
@@ -858,6 +918,7 @@ async function startVoskContinuous() {
     return false;
   }
 
+  armVoskSilentWatchdog();
   ui.setFeedback("Lis les notes de gauche a droite.", "neutral");
   return true;
 }

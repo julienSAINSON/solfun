@@ -110,6 +110,11 @@ export class VoskRecognitionService {
     return Boolean(this.model);
   }
 
+  isAndroidDevice() {
+    const userAgent = String(navigator?.userAgent ?? "").toLowerCase();
+    return userAgent.includes("android");
+  }
+
   async startContinuous({ onPartial, onFinal, onError, onReady } = {}) {
     if (this.started) {
       return { ok: false, reason: "busy" };
@@ -120,17 +125,28 @@ export class VoskRecognitionService {
       return modelResult;
     }
 
+    const isAndroid = this.isAndroidDevice();
+
     try {
       this.emitDebug("vosk-mic-request-start");
+      const preferredAudioConstraints = isAndroid
+        ? {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+          }
+        : {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+            sampleRate: { ideal: this.sampleRate },
+          };
+
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         video: false,
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-          sampleRate: { ideal: this.sampleRate },
-        },
+        audio: preferredAudioConstraints,
       });
       this.emitDebug("vosk-mic-request-success");
     } catch (error) {
@@ -161,11 +177,30 @@ export class VoskRecognitionService {
         sampleRate: runtimeSampleRate,
       });
 
+      const track = this.mediaStream?.getAudioTracks?.()[0] ?? null;
+      const trackSettings = track?.getSettings?.() ?? null;
+      if (trackSettings) {
+        this.emitDebug("vosk-mic-track-settings", {
+          sampleRate: trackSettings.sampleRate ?? null,
+          channelCount: trackSettings.channelCount ?? null,
+          echoCancellation: trackSettings.echoCancellation ?? null,
+          noiseSuppression: trackSettings.noiseSuppression ?? null,
+          autoGainControl: trackSettings.autoGainControl ?? null,
+        });
+      }
+
       const grammar = this.grammarPhrases.length > 0 ? JSON.stringify(this.grammarPhrases) : undefined;
-      this.recognizer = new this.model.KaldiRecognizer(runtimeSampleRate, grammar);
+      const useGrammar = Boolean(grammar) && !isAndroid;
+      if (!useGrammar && grammar) {
+        this.emitDebug("vosk-grammar-disabled-mobile", { platform: "android" });
+      }
+
+      this.recognizer = useGrammar
+        ? new this.model.KaldiRecognizer(runtimeSampleRate, grammar)
+        : new this.model.KaldiRecognizer(runtimeSampleRate);
       this.emitDebug("vosk-recognizer-created", {
         sampleRate: runtimeSampleRate,
-        grammarApplied: Boolean(grammar),
+        grammarApplied: useGrammar,
       });
 
       this.recognizer.on("partialresult", (message) => {
