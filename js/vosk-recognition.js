@@ -127,24 +127,44 @@ export class VoskRecognitionService {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
+          autoGainControl: true,
           channelCount: 1,
-          sampleRate: this.sampleRate,
+          sampleRate: { ideal: this.sampleRate },
         },
       });
       this.emitDebug("vosk-mic-request-success");
     } catch (error) {
       this.emitDebug("vosk-mic-request-failed", { error: String(error) });
-      return { ok: false, reason: "mic-permission-failed", error };
+      try {
+        this.emitDebug("vosk-mic-request-start", { fallback: true });
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: true,
+        });
+        this.emitDebug("vosk-mic-request-success", { fallback: true });
+      } catch (fallbackError) {
+        this.emitDebug("vosk-mic-request-failed", { error: String(fallbackError), fallback: true });
+        return { ok: false, reason: "mic-permission-failed", error: fallbackError };
+      }
     }
 
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.audioContext = new AudioCtx();
+      if (this.audioContext.state === "suspended") {
+        await this.audioContext.resume();
+      }
+
+      const runtimeSampleRate = Number(this.audioContext.sampleRate) || this.sampleRate;
+      this.emitDebug("vosk-audio-context-ready", {
+        state: this.audioContext.state,
+        sampleRate: runtimeSampleRate,
+      });
 
       const grammar = this.grammarPhrases.length > 0 ? JSON.stringify(this.grammarPhrases) : undefined;
-      this.recognizer = new this.model.KaldiRecognizer(this.sampleRate, grammar);
+      this.recognizer = new this.model.KaldiRecognizer(runtimeSampleRate, grammar);
       this.emitDebug("vosk-recognizer-created", {
-        sampleRate: this.sampleRate,
+        sampleRate: runtimeSampleRate,
         grammarApplied: Boolean(grammar),
       });
 
