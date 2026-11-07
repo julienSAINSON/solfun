@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solfun - Le solfege devient un jeu !</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/animations.css" />
+  </head>
+  <body>
+    <div class="background-shapes" aria-hidden="true">
+      <span class="shape shape-a"></span>
+      <span class="shape shape-b"></span>
+      <span class="shape shape-c"></span>
+    </div>
+
+    <main class="app-shell">
+      <section id="home-screen" class="screen screen-active" aria-labelledby="home-title">
+        <p class="brand">SOLFUN</p>
+        <h1 id="home-title">Le solfege devient un jeu !</h1>
+        <p class="intro">
+          Devine la note sur la portee en disant son nom. 10 notes, plein de sourires.
+        </p>
+
+        <div class="engine-selector">
+          <label for="engine-select">Moteur vocal</label>
+          <select id="engine-select" class="diagnostic-select">
+            <option value="webspeech">Web Speech (navigateur)</option>
+            <option value="vosk" selected>Vosk local (prototype)</option>
+          </select>
+          <p id="engine-status" class="engine-status">Mode par defaut: Vosk local (prototype)</p>
+        </div>
+
+        <section id="range-selector" class="range-selector" aria-label="Plage de notes">
+          <p class="range-title">Plage de notes de l'exercice</p>
+          <p id="range-summary" class="range-summary">De DO (C4) a SI (B4)</p>
+
+          <div id="range-staff-panel" class="range-staff-panel" aria-hidden="true">
+            <svg id="range-staff-svg" class="range-staff-svg" viewBox="0 0 420 220" role="img" aria-label="Apercu de la plage de notes"></svg>
+          </div>
+
+          <div class="range-controls">
+            <label for="range-min-note">Curseur bas</label>
+            <input id="range-min-note" class="range-input" type="range" min="0" max="0" value="0" step="1" />
+
+            <label for="range-max-note">Curseur haut</label>
+            <input id="range-max-note" class="range-input" type="range" min="0" max="0" value="0" step="1" />
+          </div>
+        </section>
+
+        <section class="count-selector" aria-label="Nombre de notes">
+          <p class="count-title">Nombre de notes par partie</p>
+          <p id="note-count-value" class="count-value">10 notes</p>
+          <input
+            id="note-count-input"
+            class="range-input"
+            type="range"
+            min="5"
+            max="20"
+            value="10"
+            step="1"
+            aria-label="Nombre de notes"
+          />
+        </section>
+
+        <button id="play-btn" class="btn btn-primary" type="button">Jouer</button>
+      </section>
+
+      <section id="game-screen" class="screen" aria-live="polite">
+        <header class="game-header">
+          <div class="progress-meta">
+            <p id="round-label">Note 1/10</p>
+            <p id="score-label">Score : 0</p>
+          </div>
+          <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="10" aria-valuenow="1">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+        </header>
+
+        <section class="staff-panel" aria-label="Partition">
+          <svg id="staff-svg" class="staff-svg" viewBox="0 0 420 220" role="img" aria-label="Une note sur une portee en cle de sol"></svg>
+        </section>
+
+        <section class="controls-panel">
+          <button id="mic-btn" class="btn btn-mic" type="button">🎤 Maintiens pour parler</button>
+          <button id="replay-inline-btn" class="btn btn-primary" type="button" hidden>Rejouer</button>
+          <p id="listening-indicator" class="listening-indicator" hidden>J'ecoute...</p>
+          <p id="sound-interval" class="sound-interval">Intervalle 1er-2e son: --</p>
+
+          <div class="debug-controls">
+            <button id="debug-toggle-btn" class="btn btn-debug-toggle" type="button">Activer debug micro</button>
+          </div>
+
+          <div id="speech-debug-panel" class="speech-debug-panel" hidden>
+            <p class="speech-debug-title">Debug micro (ce que le navigateur entend)</p>
+            <pre id="speech-debug-log" class="speech-debug-log" aria-live="polite"></pre>
+          </div>
+
+          <div class="diagnostic-controls">
+            <button id="diagnostic-toggle-btn" class="btn btn-debug-toggle" type="button">Activer mode diagnostic</button>
+          </div>
+
+          <div id="diagnostic-panel" class="diagnostic-panel" hidden>
+            <p class="diagnostic-title">Mode diagnostic vocal</p>
+
+            <div class="diagnostic-grid">
+              <label for="diagnostic-note-select">Note a tester</label>
+              <select id="diagnostic-note-select" class="diagnostic-select">
+                <option value="DO">DO</option>
+                <option value="RE">RE</option>
+                <option value="MI">MI</option>
+                <option value="FA" selected>FA</option>
+                <option value="SOL">SOL</option>
+                <option value="LA">LA</option>
+                <option value="SI">SI</option>
+              </select>
+            </div>
+
+            <p class="diagnostic-hint">Essais recommandes : "FA", "C'est FA", "La note est FA"</p>
+
+            <div class="diagnostic-actions">
+              <button id="diagnostic-listen-btn" class="btn btn-mic" type="button">Tester au micro</button>
+              <button id="diagnostic-reset-btn" class="btn btn-note" type="button">Remettre les compteurs</button>
+            </div>
+
+            <p class="diagnostic-stats">
+              Correctes : <span id="diagnostic-correct-count">0</span>
+              | Incorrectes : <span id="diagnostic-incorrect-count">0</span>
+            </p>
+            <p id="diagnostic-last-verdict" class="diagnostic-last-verdict">Aucun test pour l'instant.</p>
+            <pre id="diagnostic-log" class="speech-debug-log" aria-live="polite"></pre>
+          </div>
+
+          <div id="fallback-panel" class="fallback-panel" hidden>
+            <p class="fallback-title">Mode boutons</p>
+            <div class="note-buttons">
+              <button class="btn btn-note" data-answer="DO" type="button">DO</button>
+              <button class="btn btn-note" data-answer="RE" type="button">RÉ</button>
+              <button class="btn btn-note" data-answer="MI" type="button">MI</button>
+              <button class="btn btn-note" data-answer="FA" type="button">FA</button>
+              <button class="btn btn-note" data-answer="SOL" type="button">SOL</button>
+            </div>
+          </div>
+
+          <p id="feedback" class="feedback">Appuie sur le micro pour repondre.</p>
+        </section>
+      </section>
+
+      <section id="result-screen" class="screen" aria-labelledby="result-title">
+        <h2 id="result-title">Partie terminee !</h2>
+        <p id="result-mood" class="result-mood"></p>
+        <p id="result-score" class="result-score"></p>
+        <p id="result-correct" class="result-line"></p>
+        <p id="result-rate" class="result-line"></p>
+        <p id="result-speed" class="result-line"></p>
+        <p id="result-time" class="result-line"></p>
+        <button id="replay-btn" class="btn btn-primary" type="button">Rejouer</button>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/vosk-browser@0.0.5/dist/vosk.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
