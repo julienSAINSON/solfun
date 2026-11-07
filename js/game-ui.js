@@ -14,6 +14,12 @@ export class GameUI {
     this.replayButton = document.getElementById("replay-btn");
     this.engineSelect = document.getElementById("engine-select");
     this.engineStatus = document.getElementById("engine-status");
+    this.clefSelect = document.getElementById("clef-select");
+    this.clefInputs = Array.from(document.querySelectorAll('input[name="clef-mode"]'));
+    this.practiceModeSelect = document.getElementById("practice-mode-select");
+    this.tempoSelector = document.getElementById("tempo-selector");
+    this.tempoInput = document.getElementById("tempo-input");
+    this.tempoValue = document.getElementById("tempo-value");
     this.rangeSelector = document.getElementById("range-selector");
     this.rangeStaffPanel = document.getElementById("range-staff-panel");
     this.rangeMinInput = document.getElementById("range-min-note");
@@ -57,6 +63,85 @@ export class GameUI {
     this.rangeNotes = [];
     this.rangeInitialized = false;
     this.noteCountInitialized = false;
+    this.practiceModeInitialized = false;
+  }
+
+  setupPracticeMode({ defaultMode = "static", defaultTempo = 90 } = {}) {
+    if (!this.practiceModeSelect) {
+      return;
+    }
+
+    const mode = defaultMode === "dynamic" ? "dynamic" : "static";
+    this.practiceModeSelect.value = mode;
+
+    if (this.tempoInput) {
+      const tempo = Number.isFinite(defaultTempo) ? Math.max(40, Math.min(180, Math.round(defaultTempo))) : 90;
+      this.tempoInput.min = "40";
+      this.tempoInput.max = "180";
+      this.tempoInput.step = "1";
+      this.tempoInput.value = String(tempo);
+    }
+
+    if (!this.practiceModeInitialized) {
+      this.practiceModeSelect.addEventListener("change", () => {
+        this.refreshPracticeModeUI();
+      });
+
+      this.tempoInput?.addEventListener("input", () => {
+        this.refreshPracticeModeUI();
+      });
+
+      this.practiceModeInitialized = true;
+    }
+
+    this.refreshPracticeModeUI();
+  }
+
+  refreshPracticeModeUI() {
+    const mode = this.getSelectedPracticeMode();
+    const isDynamic = mode === "dynamic";
+
+    if (this.tempoSelector) {
+      this.tempoSelector.hidden = !isDynamic;
+    }
+
+    if (this.tempoValue) {
+      this.tempoValue.textContent = `${this.getSelectedTempoBpm()} BPM`;
+    }
+  }
+
+  getSelectedPracticeMode() {
+    if (!this.practiceModeSelect) {
+      return "static";
+    }
+
+    return this.practiceModeSelect.value === "dynamic" ? "dynamic" : "static";
+  }
+
+  getSelectedTempoBpm() {
+    if (!this.tempoInput) {
+      return 90;
+    }
+
+    const raw = Number(this.tempoInput.value);
+    if (!Number.isFinite(raw)) {
+      return 90;
+    }
+
+    return Math.max(40, Math.min(180, Math.round(raw)));
+  }
+
+  getSelectedClef() {
+    if (this.clefInputs.length > 0) {
+      const selected = this.clefInputs.find((input) => input.checked);
+      return selected?.value === "bass" ? "bass" : "treble";
+    }
+
+    if (!this.clefSelect) {
+      return "treble";
+    }
+
+    return this.clefSelect.value === "bass" ? "bass" : "treble";
   }
 
   setupNoteCount({ min = 5, max = 20, value = 10 } = {}) {
@@ -183,7 +268,9 @@ export class GameUI {
       this.rangeSelector.style.maxWidth = "";
     }
 
-    renderStaffSequence(this.rangeStaffSvg, selectedPool, [], -1, "expand");
+    renderStaffSequence(this.rangeStaffSvg, selectedPool, [], -1, "expand", {
+      clef: this.getSelectedClef(),
+    });
 
     if (!this.rangeSummary) {
       return;
@@ -203,6 +290,7 @@ export class GameUI {
     onPlay,
     onReplay,
     onEngineChange,
+    onClefChange,
     onMicPress,
     onMicRelease,
     onFallbackAnswer,
@@ -215,6 +303,12 @@ export class GameUI {
     this.replayButton.addEventListener("click", onReplay);
     this.replayInlineButton?.addEventListener("click", onReplay);
     this.engineSelect?.addEventListener("change", onEngineChange);
+    if (typeof onClefChange === "function") {
+      this.clefInputs.forEach((input) => {
+        input.addEventListener("change", onClefChange);
+      });
+      this.clefSelect?.addEventListener("change", onClefChange);
+    }
     this.micButton.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       onMicPress();
@@ -364,18 +458,21 @@ export class GameUI {
     renderStaffNote(this.staffSvg, note);
   }
 
-  setSequence({ notes, states, currentIndex, processedCount, totalCount, correctCount }) {
+  setSequence({ notes, states, currentIndex, processedCount, totalCount, correctCount, renderOptions = {} }) {
     this.roundLabel.textContent = `Lecture ${processedCount}/${totalCount}`;
     this.scoreLabel.textContent = `Bonnes : ${correctCount}`;
     const progress = totalCount > 0 ? (processedCount / totalCount) * 100 : 0;
     this.progressFill.style.width = `${progress}%`;
     this.progressTrack.setAttribute("aria-valuenow", String(processedCount));
     this.progressTrack.setAttribute("aria-valuemax", String(totalCount));
-    renderStaffSequence(this.staffSvg, notes, states, currentIndex);
+    renderStaffSequence(this.staffSvg, notes, states, currentIndex, renderOptions.layoutMode ?? "fit", {
+      ...renderOptions,
+      clef: renderOptions.clef ?? this.getSelectedClef(),
+    });
   }
 
-  updateSequenceState({ notes, states, currentIndex, processedCount, totalCount, correctCount }) {
-    this.setSequence({ notes, states, currentIndex, processedCount, totalCount, correctCount });
+  updateSequenceState({ notes, states, currentIndex, processedCount, totalCount, correctCount, renderOptions = {} }) {
+    this.setSequence({ notes, states, currentIndex, processedCount, totalCount, correctCount, renderOptions });
   }
 
   setScore(score) {

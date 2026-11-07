@@ -31,6 +31,34 @@
           <p id="engine-status" class="engine-status">Mode par defaut: Vosk local (prototype)</p>
         </div>
 
+        <fieldset class="engine-selector clef-selector" aria-label="Cle musicale">
+          <legend>Cle musicale</legend>
+          <div class="clef-radio-group">
+            <div class="clef-radio">
+              <input id="clef-treble" type="radio" name="clef-mode" value="treble" checked />
+              <label for="clef-treble">Cle de sol</label>
+            </div>
+            <div class="clef-radio">
+              <input id="clef-bass" type="radio" name="clef-mode" value="bass" />
+              <label for="clef-bass">Cle de fa</label>
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="engine-selector">
+          <label for="practice-mode-select">Mode de lecture</label>
+          <select id="practice-mode-select" class="diagnostic-select">
+            <option value="static" selected>Statique</option>
+            <option value="dynamic">Dynamique (notes qui avancent)</option>
+          </select>
+        </div>
+
+        <section id="tempo-selector" class="count-selector" hidden aria-label="Tempo de lecture">
+          <p class="count-title">Tempo du mode dynamique</p>
+          <p id="tempo-value" class="count-value">90 BPM</p>
+          <input id="tempo-input" class="range-input" type="range" min="40" max="180" value="90" step="1" aria-label="Tempo" />
+        </section>
+
         <section id="range-selector" class="range-selector" aria-label="Plage de notes">
           <p class="range-title">Plage de notes de l'exercice</p>
           <p id="range-summary" class="range-summary">De DO (C4) a SI (B4)</p>

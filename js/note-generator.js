@@ -1,131 +1,77 @@
-const TREBLE_NOTES = [
-  {
-    id: "C3",
-    label: "DO",
-    stepFromBottomLine: -9,
-    aliases: ["do", "ut"],
-  },
-  {
-    id: "D3",
-    label: "RE",
-    stepFromBottomLine: -8,
-    aliases: ["re", "re"],
-  },
-  {
-    id: "E3",
-    label: "MI",
-    stepFromBottomLine: -7,
-    aliases: ["mi"],
-  },
-  {
-    id: "F3",
-    label: "FA",
-    stepFromBottomLine: -6,
-    aliases: ["fa"],
-  },
-  {
-    id: "G3",
-    label: "SOL",
-    stepFromBottomLine: -5,
-    aliases: ["sol"],
-  },
-  {
-    id: "A3",
-    label: "LA",
-    stepFromBottomLine: -4,
-    aliases: ["la"],
-  },
-  {
-    id: "B3",
-    label: "SI",
-    stepFromBottomLine: -3,
-    aliases: ["si"],
-  },
-  {
-    id: "C4",
-    label: "DO",
-    stepFromBottomLine: -2,
-    aliases: ["do", "ut"],
-  },
-  {
-    id: "D4",
-    label: "RE",
-    stepFromBottomLine: -1,
-    aliases: ["re", "re"],
-  },
-  {
-    id: "E4",
-    label: "MI",
-    stepFromBottomLine: 0,
-    aliases: ["mi"],
-  },
-  {
-    id: "F4",
-    label: "FA",
-    stepFromBottomLine: 1,
-    aliases: ["fa"],
-  },
-  {
-    id: "G4",
-    label: "SOL",
-    stepFromBottomLine: 2,
-    aliases: ["sol"],
-  },
-  {
-    id: "A4",
-    label: "LA",
-    stepFromBottomLine: 3,
-    aliases: ["la"],
-  },
-  {
-    id: "B4",
-    label: "SI",
-    stepFromBottomLine: 4,
-    aliases: ["si"],
-  },
-  {
-    id: "C5",
-    label: "DO",
-    stepFromBottomLine: 5,
-    aliases: ["do", "ut"],
-  },
-  {
-    id: "D5",
-    label: "RE",
-    stepFromBottomLine: 6,
-    aliases: ["re", "re"],
-  },
-  {
-    id: "E5",
-    label: "MI",
-    stepFromBottomLine: 7,
-    aliases: ["mi"],
-  },
-  {
-    id: "F5",
-    label: "FA",
-    stepFromBottomLine: 8,
-    aliases: ["fa"],
-  },
-  {
-    id: "G5",
-    label: "SOL",
-    stepFromBottomLine: 9,
-    aliases: ["sol"],
-  },
-  {
-    id: "A5",
-    label: "LA",
-    stepFromBottomLine: 10,
-    aliases: ["la"],
-  },
-  {
-    id: "B5",
-    label: "SI",
-    stepFromBottomLine: 11,
-    aliases: ["si"],
-  },
-];
+const NOTE_LABELS = ["DO", "RE", "MI", "FA", "SOL", "LA", "SI"];
+const NOTE_ALIASES = {
+  DO: ["do", "ut"],
+  RE: ["re"],
+  MI: ["mi"],
+  FA: ["fa"],
+  SOL: ["sol"],
+  LA: ["la"],
+  SI: ["si"],
+};
+
+function diatonicIndexFromPitch(noteName, octave) {
+  const noteOrder = ["C", "D", "E", "F", "G", "A", "B"];
+  const step = noteOrder.indexOf(noteName);
+  return octave * 7 + step;
+}
+
+function labelFromNoteName(noteName) {
+  const map = {
+    C: "DO",
+    D: "RE",
+    E: "MI",
+    F: "FA",
+    G: "SOL",
+    A: "LA",
+    B: "SI",
+  };
+  return map[noteName] ?? "DO";
+}
+
+function createClefNote(noteName, octave, clef, referenceBottomLine) {
+  const id = `${noteName}${octave}`;
+  const label = labelFromNoteName(noteName);
+  const aliases = NOTE_ALIASES[label] ?? [];
+  const stepFromBottomLine = diatonicIndexFromPitch(noteName, octave) - referenceBottomLine;
+
+  return {
+    id,
+    label,
+    stepFromBottomLine,
+    aliases,
+    clef,
+  };
+}
+
+function buildClefNotes({ clef, minOctave, maxOctave, referenceBottomLine }) {
+  const noteOrder = ["C", "D", "E", "F", "G", "A", "B"];
+  const notes = [];
+
+  for (let octave = minOctave; octave <= maxOctave; octave += 1) {
+    noteOrder.forEach((noteName) => {
+      notes.push(createClefNote(noteName, octave, clef, referenceBottomLine));
+    });
+  }
+
+  return notes;
+}
+
+const TREBLE_BOTTOM_LINE_REFERENCE = diatonicIndexFromPitch("E", 4);
+const BASS_BOTTOM_LINE_REFERENCE = diatonicIndexFromPitch("G", 2);
+
+const TREBLE_NOTES = buildClefNotes({
+  clef: "treble",
+  minOctave: 3,
+  maxOctave: 5,
+  referenceBottomLine: TREBLE_BOTTOM_LINE_REFERENCE,
+});
+
+const BASS_NOTES = buildClefNotes({
+  clef: "bass",
+  minOctave: 1,
+  maxOctave: 4,
+  referenceBottomLine: BASS_BOTTOM_LINE_REFERENCE,
+});
 
 function pickRandomNote(pool) {
   return pool[Math.floor(Math.random() * pool.length)];
@@ -149,4 +95,4 @@ export function generateRoundNotes(count = 10, pool = TREBLE_NOTES) {
   return notes;
 }
 
-export { TREBLE_NOTES };
+export { TREBLE_NOTES, BASS_NOTES, NOTE_LABELS };

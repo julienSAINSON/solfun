@@ -46,6 +46,43 @@ function drawTrebleClef(svgElement, x, y) {
   ).textContent = "𝄞";
 }
 
+function drawBassClef(svgElement, x, y) {
+  svgElement.appendChild(
+    createSvgElement("text", {
+      x,
+      y,
+      fill: "#1f2b47",
+      "font-size": 64,
+      "font-family": "Times New Roman, serif",
+    })
+  ).textContent = "𝄢";
+}
+
+function drawClef(svgElement, clef, x, y) {
+  if (clef === "bass") {
+    drawBassClef(svgElement, x, y - 16);
+    return;
+  }
+
+  drawTrebleClef(svgElement, x, y);
+}
+
+function drawTimingBar(svgElement, x, topY, bottomY) {
+  svgElement.appendChild(
+    createSvgElement("line", {
+      x1: x,
+      y1: topY,
+      x2: x,
+      y2: bottomY,
+      stroke: "#2563eb",
+      "stroke-width": 3,
+      "stroke-dasharray": "5 4",
+      "stroke-linecap": "round",
+      opacity: 0.95,
+    })
+  );
+}
+
 function drawLedgerLines(svgElement, centerX, y, lineSpacing, stepFromBottomLine) {
   const minimumStep = 0;
   const maximumStep = 8;
@@ -200,29 +237,43 @@ export function renderStaffNote(svgElement, note) {
 
   const leftX = 72;
   const rightX = 382;
+  const clef = String(note?.clef ?? "treble");
   const bottomLineY = 158;
   const lineSpacing = 16;
   const noteCenterX = 258;
   const noteY = bottomLineY - note.stepFromBottomLine * (lineSpacing / 2);
 
   drawStaff(svgElement, leftX, rightX, bottomLineY, lineSpacing);
-  drawTrebleClef(svgElement, 92, 154);
+  drawClef(svgElement, clef, 92, 154);
   drawLedgerLines(svgElement, noteCenterX, noteY, lineSpacing, note.stepFromBottomLine);
   drawNote(svgElement, noteCenterX, noteY);
 }
 
-export function renderStaffSequence(svgElement, notes, states = [], currentIndex = 0, layoutMode = "fit") {
+export function renderStaffSequence(svgElement, notes, states = [], currentIndex = 0, layoutMode = "fit", renderOptions = {}) {
   clearSvg(svgElement);
 
   const isExpandMode = layoutMode === "expand";
+  const isDynamicMode = layoutMode === "dynamic";
   const leftX = 60;
   const noteStartX = 126;
   const baseNoteEndX = 382;
   const noteCount = Array.isArray(notes) ? notes.length : 0;
   const expandedNoteEndX = noteStartX + Math.max(0, noteCount - 1) * PREVIEW_NOTE_SPACING;
-  const noteEndX = isExpandMode ? Math.max(baseNoteEndX, expandedNoteEndX) : baseNoteEndX;
-  const rightX = isExpandMode ? Math.max(398, noteEndX + 26) : 398;
-  const viewBoxWidth = isExpandMode ? rightX + leftX : rightX + 22;
+  const dynamicSpacing = Number.isFinite(renderOptions.dynamicSpacing) ? renderOptions.dynamicSpacing : 58;
+  const dynamicLeadIn = Number.isFinite(renderOptions.dynamicLeadIn) ? renderOptions.dynamicLeadIn : 92;
+  const dynamicMotionOffsetX = Number.isFinite(renderOptions.motionOffsetX) ? renderOptions.motionOffsetX : 0;
+  const dynamicTimingBarX = Number.isFinite(renderOptions.timingBarX) ? renderOptions.timingBarX : 242;
+  const clef = String(renderOptions.clef ?? notes?.[0]?.clef ?? "treble");
+
+  let noteEndX = baseNoteEndX;
+  if (isExpandMode) {
+    noteEndX = Math.max(baseNoteEndX, expandedNoteEndX);
+  } else if (isDynamicMode) {
+    noteEndX = Math.max(baseNoteEndX, dynamicTimingBarX + dynamicLeadIn + Math.max(0, noteCount - 1) * dynamicSpacing);
+  }
+
+  const rightX = isExpandMode || isDynamicMode ? Math.max(398, noteEndX + 26) : 398;
+  const viewBoxWidth = isExpandMode || isDynamicMode ? rightX + leftX : rightX + 22;
   const bottomLineY = 158;
   const lineSpacing = 16;
 
@@ -230,7 +281,10 @@ export function renderStaffSequence(svgElement, notes, states = [], currentIndex
   svgElement.style.width = isExpandMode ? `${viewBoxWidth}px` : "100%";
 
   drawStaff(svgElement, leftX, rightX, bottomLineY, lineSpacing);
-  drawTrebleClef(svgElement, 78, 154);
+  drawClef(svgElement, clef, 78, 154);
+  if (isDynamicMode) {
+    drawTimingBar(svgElement, dynamicTimingBarX, bottomLineY - lineSpacing * 5.1, bottomLineY + lineSpacing * 1.2);
+  }
 
   if (!Array.isArray(notes) || notes.length === 0) {
     return;
@@ -239,7 +293,10 @@ export function renderStaffSequence(svgElement, notes, states = [], currentIndex
   const spacing = notes.length > 1 ? (noteEndX - noteStartX) / (notes.length - 1) : 0;
 
   notes.forEach((note, index) => {
-    const centerX = notes.length > 1 ? noteStartX + spacing * index : (noteStartX + noteEndX) / 2;
+    let centerX = notes.length > 1 ? noteStartX + spacing * index : (noteStartX + noteEndX) / 2;
+    if (isDynamicMode) {
+      centerX = dynamicTimingBarX + dynamicLeadIn + index * dynamicSpacing - dynamicMotionOffsetX;
+    }
     const noteY = bottomLineY - note.stepFromBottomLine * (lineSpacing / 2);
     const state = states[index] ?? "pending";
 

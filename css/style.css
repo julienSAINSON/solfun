@@ -131,6 +131,52 @@ h2 {
   color: #355892;
 }
 
+.clef-selector {
+  border: 2px dashed #c8d2eb;
+}
+
+.clef-selector legend {
+  padding: 0 0.35rem;
+  font-weight: 700;
+  color: #355892;
+}
+
+.clef-radio-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.clef-radio input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.clef-radio label {
+  margin: 0;
+  text-align: center;
+  padding: 0.55rem 0.5rem;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 2px solid #c8d2eb;
+  color: #355892;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.clef-radio label:hover {
+  transform: translateY(-1px);
+  border-color: #90afe5;
+}
+
+.clef-radio input:checked + label {
+  background: #eaf2ff;
+  border-color: #5f87d4;
+  color: #224f9f;
+}
+
 .engine-status {
   margin: 0.5rem 0 0;
   color: #4b607d;

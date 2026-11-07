@@ -1,17 +1,26 @@
 import { GameUI } from "./game-ui.js";
 import { SpeechRecognitionService } from "./speech-recognition.js";
 import { VoskRecognitionService } from "./vosk-recognition.js";
-import { generateRoundNotes, TREBLE_NOTES } from "./note-generator.js";
+import { generateRoundNotes, TREBLE_NOTES, BASS_NOTES } from "./note-generator.js";
 import { ContinuousReadingSession } from "./continuous-reading-session.js";
 import { extractBestNoteTokenSequence, normalizeSpeechText, NOTE_ALIAS_MAP } from "./voice-note-matcher.js";
 
 const DEFAULT_TOTAL_NOTES = 10;
 const MIN_TOTAL_NOTES = 5;
 const MAX_TOTAL_NOTES = 20;
+const DEFAULT_PRACTICE_MODE = "static";
+const DEFAULT_DYNAMIC_TEMPO_BPM = 90;
+const DYNAMIC_BEAT_WINDOW_RATIO = 0.78;
+const DYNAMIC_TIMING_BAR_BASE_X = 218;
+const DYNAMIC_TIMING_BAR_NOTE_WIDTH_SHIFT = 24;
+const DYNAMIC_TIMING_BAR_X = DYNAMIC_TIMING_BAR_BASE_X + DYNAMIC_TIMING_BAR_NOTE_WIDTH_SHIFT;
 const NOTE_WORDS = ["DO", "RE", "MI", "FA", "SOL", "LA", "SI", "UT"];
 const WEB_SPEECH_HINTS = NOTE_WORDS.flatMap((note) => [note, note.toLowerCase()]);
-const DEFAULT_MIN_NOTE_ID = "C4";
-const DEFAULT_MAX_NOTE_ID = "B4";
+const DEFAULT_CLEF = "treble";
+const DEFAULT_RANGE_BY_CLEF = {
+  treble: { minNoteId: "C4", maxNoteId: "B4" },
+  bass: { minNoteId: "C3", maxNoteId: "B3" },
+};
 
 const VOSK_MODEL_URL = "assets/models/vosk-model-small-fr/model.tar.gz";
 const VOSK_GRAMMAR_PHRASES = [
@@ -39,6 +48,9 @@ const voskService = new VoskRecognitionService({
 let speechDebugEnabled = false;
 let exerciseSession = null;
 let exerciseActive = false;
+let selectedClef = DEFAULT_CLEF;
+let practiceMode = DEFAULT_PRACTICE_MODE;
+let dynamicTempoBpm = DEFAULT_DYNAMIC_TEMPO_BPM;
 let selectedEngine = "vosk";
 let gameStartInProgress = false;
 let micPressActive = false;
@@ -54,6 +66,7 @@ let lastAcceptedVoskFinalText = "";
 let lastAcceptedVoskFinalAtMs = 0;
 let exerciseFirstCapturedAtMs = null;
 let exerciseLastCapturedAtMs = null;
+let dynamicTimeline = null;
 
 const processedWebSpeechFinalChunkIds = new Set();
 
@@ -251,6 +264,24 @@ function updateSequenceUI() {
     return;
   }
 
+  const renderOptions = { layoutMode: "fit" };
+  if (practiceMode === "dynamic") {
+    renderOptions.layoutMode = "dynamic";
+    renderOptions.dynamicSpacing = dynamicTimeline?.dynamicSpacing ?? 58;
+    renderOptions.dynamicLeadIn = dynamicTimeline?.dynamicLeadIn ?? 92;
+    renderOptions.timingBarX = dynamicTimeline?.timingBarX ?? DYNAMIC_TIMING_BAR_X;
+
+    if (dynamicTimeline) {
+    const elapsedMs = Math.max(0, performance.now() - dynamicTimeline.startAtMs);
+    const beatsProgress = elapsedMs / dynamicTimeline.beatMs;
+      renderOptions.motionOffsetX = beatsProgress * dynamicTimeline.dynamicSpacing;
+    } else {
+      renderOptions.motionOffsetX = 0;
+    }
+  }
+
+  renderOptions.clef = selectedClef;
+
   ui.updateSequenceState({
     notes: exerciseSession.notes,
     states: exerciseSession.states,
@@ -258,7 +289,222 @@ function updateSequenceUI() {
     processedCount: exerciseSession.getProcessedCount(),
     totalCount: exerciseSession.getTotalCount(),
     correctCount: exerciseSession.correctCount,
+    renderOptions,
   });
+}
+
+function getClefPool(clef) {
+  return clef === "bass" ? BASS_NOTES : TREBLE_NOTES;
+}
+
+function configureNoteRangeForClef(clef) {
+  const safeClef = clef === "bass" ? "bass" : "treble";
+  const pool = getClefPool(safeClef);
+  const defaults = DEFAULT_RANGE_BY_CLEF[safeClef] ?? DEFAULT_RANGE_BY_CLEF.treble;
+  const defaultMinIndex = Math.max(0, pool.findIndex((note) => note.id === defaults.minNoteId));
+  const defaultMaxIndexRaw = pool.findIndex((note) => note.id === defaults.maxNoteId);
+  const defaultMaxIndex = defaultMaxIndexRaw >= defaultMinIndex ? defaultMaxIndexRaw : pool.length - 1;
+
+  ui.setupNoteRange({
+    notes: pool,
+    defaultMinIndex,
+    defaultMaxIndex,
+  });
+}
+
+function stopDynamicTimeline() {
+  if (!dynamicTimeline) {
+    return;
+  }
+
+  if (dynamicTimeline.rafId !== null) {
+    window.cancelAnimationFrame(dynamicTimeline.rafId);
+  }
+
+  dynamicTimeline = null;
+}
+
+function findNextPendingIndex(startIndex = 0, maxIndex = Number.POSITIVE_INFINITY) {
+  if (!exerciseSession) {
+    return -1;
+  }
+
+  const clampedStart = Math.max(0, Math.min(startIndex, exerciseSession.notes.length - 1));
+  const clampedMax = Math.max(clampedStart, Math.min(maxIndex, exerciseSession.notes.length - 1));
+
+  for (let index = clampedStart; index <= clampedMax; index += 1) {
+    if (exerciseSession.states[index] === "pending") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function getDynamicBeatsProgress(nowMs = performance.now()) {
+  if (!dynamicTimeline) {
+    return 0;
+  }
+
+  const elapsedMs = Math.max(0, nowMs - dynamicTimeline.startAtMs);
+  return elapsedMs / dynamicTimeline.beatMs;
+}
+
+function evaluateDynamicNoteAtIndex(index) {
+  if (!exerciseSession || !dynamicTimeline) {
+    return;
+  }
+
+  const expectedLabel = String(exerciseSession.getNoteAt(index)?.label ?? "").toUpperCase();
+  if (!expectedLabel) {
+    return;
+  }
+
+  const targetBeat = dynamicTimeline.barOffsetBeats + index;
+  const windowStart = targetBeat - dynamicTimeline.hitWindowHalfBeats;
+  const windowEnd = targetBeat + dynamicTimeline.hitWindowHalfBeats;
+
+  const candidates = dynamicTimeline.captureEvents.filter(
+    (event) => !event.used && event.beatsProgress >= windowStart && event.beatsProgress <= windowEnd
+  );
+
+  const exactMatch = candidates.find((event) => event.token === expectedLabel) ?? null;
+
+  let verdict = null;
+  if (exactMatch) {
+    exactMatch.used = true;
+    verdict = exerciseSession.markRecognizedAtIndex(index, exactMatch.token);
+    if (verdict) {
+      registerCapturedNoteTimestamp(exactMatch.atMs);
+      ui.setFeedback(`OK ${verdict.actualLabel}`, "success");
+    }
+  } else if (candidates.length > 0) {
+    const nearest = candidates.reduce((best, current) => {
+      const bestDelta = Math.abs(best.beatsProgress - targetBeat);
+      const currentDelta = Math.abs(current.beatsProgress - targetBeat);
+      return currentDelta < bestDelta ? current : best;
+    });
+    nearest.used = true;
+    verdict = exerciseSession.markRecognizedAtIndex(index, nearest.token);
+    if (verdict) {
+      registerCapturedNoteTimestamp(nearest.atMs);
+      ui.setFeedback(`Non: attendu ${verdict.expectedLabel}, entendu ${verdict.actualLabel}`, "error");
+    }
+  } else {
+    verdict = exerciseSession.markTimeoutAtIndex(index);
+    if (verdict) {
+      ui.setFeedback(`Trop tard: attendu ${verdict.expectedLabel}`, "error");
+    }
+  }
+}
+
+function resolveDynamicEvaluations() {
+  if (!exerciseSession || !dynamicTimeline) {
+    return;
+  }
+
+  const beatsProgress = getDynamicBeatsProgress();
+  const resolvedThrough = Math.floor(beatsProgress - dynamicTimeline.barOffsetBeats - dynamicTimeline.hitWindowHalfBeats);
+
+  if (resolvedThrough <= dynamicTimeline.lastEvaluatedIndex) {
+    return;
+  }
+
+  const endIndex = Math.min(resolvedThrough, exerciseSession.notes.length - 1);
+  for (let index = dynamicTimeline.lastEvaluatedIndex + 1; index <= endIndex; index += 1) {
+    evaluateDynamicNoteAtIndex(index);
+  }
+
+  dynamicTimeline.lastEvaluatedIndex = endIndex;
+}
+
+function pruneDynamicCaptureEvents() {
+  if (!dynamicTimeline) {
+    return;
+  }
+
+  const minKeepBeat = dynamicTimeline.lastEvaluatedIndex + dynamicTimeline.barOffsetBeats - 2;
+  dynamicTimeline.captureEvents = dynamicTimeline.captureEvents.filter(
+    (event) => !event.used && event.beatsProgress >= minKeepBeat
+  );
+}
+
+function startDynamicTimeline() {
+  stopDynamicTimeline();
+
+  if (!exerciseSession || !exerciseActive) {
+    return;
+  }
+
+  const beatMs = 60000 / Math.max(40, dynamicTempoBpm);
+  dynamicTimeline = {
+    startAtMs: performance.now(),
+    beatMs,
+    dynamicSpacing: 58,
+    dynamicLeadIn: 92,
+    timingBarX: DYNAMIC_TIMING_BAR_X,
+    rafId: null,
+    barOffsetBeats: 92 / 58,
+    hitWindowHalfBeats: DYNAMIC_BEAT_WINDOW_RATIO / 2,
+    captureEvents: [],
+    lastEvaluatedIndex: -1,
+  };
+
+  const tick = () => {
+    if (!dynamicTimeline || !exerciseSession || !exerciseActive) {
+      return;
+    }
+
+    resolveDynamicEvaluations();
+    pruneDynamicCaptureEvents();
+
+    const beatsProgress = getDynamicBeatsProgress();
+    const barRelative = beatsProgress - dynamicTimeline.barOffsetBeats;
+    const currentSlot = Math.max(0, Math.min(Math.round(barRelative), exerciseSession.notes.length));
+    const highlightIndex = findNextPendingIndex(Math.max(0, currentSlot - 1), exerciseSession.notes.length - 1);
+    exerciseSession.setCurrentIndex(highlightIndex >= 0 ? highlightIndex : currentSlot);
+    updateSequenceUI();
+
+    if (exerciseSession.isFinished()) {
+      finishExercise();
+      return;
+    }
+
+    dynamicTimeline.rafId = window.requestAnimationFrame(tick);
+  };
+
+  dynamicTimeline.rafId = window.requestAnimationFrame(tick);
+}
+
+function applyRecognizedNotesInDynamicMode(noteTokens) {
+  if (!exerciseSession || !exerciseActive || !dynamicTimeline || !Array.isArray(noteTokens) || noteTokens.length === 0) {
+    return;
+  }
+
+  const nowMs = performance.now();
+  const beatsProgress = getDynamicBeatsProgress(nowMs);
+
+  noteTokens.forEach((tokenValue) => {
+    const token = String(tokenValue ?? "").toUpperCase();
+    if (!token) {
+      return;
+    }
+
+    dynamicTimeline.captureEvents.push({
+      token,
+      beatsProgress,
+      atMs: nowMs,
+      used: false,
+    });
+  });
+
+  resolveDynamicEvaluations();
+  pruneDynamicCaptureEvents();
+  updateSequenceUI();
+
+  if (exerciseSession.isFinished()) {
+    finishExercise();
+  }
 }
 
 function resetExerciseTimingMetrics() {
@@ -266,8 +512,8 @@ function resetExerciseTimingMetrics() {
   exerciseLastCapturedAtMs = null;
 }
 
-function registerCapturedNoteTimestamp() {
-  const nowMs = performance.now();
+function registerCapturedNoteTimestamp(atMs = performance.now()) {
+  const nowMs = Number.isFinite(atMs) ? atMs : performance.now();
   if (exerciseFirstCapturedAtMs === null) {
     exerciseFirstCapturedAtMs = nowMs;
   }
@@ -329,6 +575,7 @@ function finishExercise() {
   const performance = computePerformanceSummary(exerciseSession);
 
   exerciseActive = false;
+  stopDynamicTimeline();
   stopAllRecognition();
   ui.setInlineReplayVisible(false);
   ui.showResult(performance);
@@ -409,6 +656,13 @@ function handleRecognitionPayload(payload, options = {}) {
 
   const extraction = extractBestNoteTokenSequence(payload);
   const tokens = extraction.tokens;
+
+  if (practiceMode === "dynamic") {
+    if (tokens.length > 0) {
+      applyRecognizedNotesInDynamicMode(tokens);
+    }
+    return;
+  }
 
   if (tokens.length === 0) {
     if (isFinal) {
@@ -655,6 +909,12 @@ async function startPushToTalk() {
   if (!started) {
     micPressActive = false;
     ui.setListening(false);
+    return;
+  }
+
+  if (practiceMode === "dynamic" && !dynamicTimeline) {
+    startDynamicTimeline();
+    ui.setFeedback(`Mode dynamique (${dynamicTempoBpm} BPM): suis la barre bleue.`, "neutral");
   }
 }
 
@@ -688,10 +948,14 @@ async function startGame() {
 
   try {
     selectedEngine = ui.getSelectedEngine();
+    selectedClef = ui.getSelectedClef();
+    practiceMode = ui.getSelectedPracticeMode();
+    dynamicTempoBpm = ui.getSelectedTempoBpm();
     updateEngineStatus();
     ui.clearSpeechDebugLog();
     ui.clearDiagnosticLog();
     clearPendingMicStop();
+    stopDynamicTimeline();
 
     stopAllRecognition();
     ui.showScreen("game");
@@ -709,7 +973,7 @@ async function startGame() {
     }
 
     const selectedPool = ui.getSelectedNotePool();
-    const effectivePool = selectedPool.length > 0 ? selectedPool : TREBLE_NOTES;
+    const effectivePool = selectedPool.length > 0 ? selectedPool : getClefPool(selectedClef);
     const selectedNoteCount = ui.getSelectedNoteCount();
     const notes = generateRoundNotes(selectedNoteCount, effectivePool);
     exerciseSession = new ContinuousReadingSession(notes);
@@ -721,10 +985,15 @@ async function startGame() {
     resetLiveValidationState();
     resetVoskFinalDedupState();
     resetExerciseTimingMetrics();
+    exerciseSession.setCurrentIndex(0);
 
     ui.setContinuousMicMode(true);
     resetSoundTiming();
-    ui.setFeedback("Maintiens le bouton micro pendant que tu lis les notes.", "neutral");
+    if (practiceMode === "dynamic") {
+      ui.setFeedback(`Mode dynamique (${dynamicTempoBpm} BPM): suis la barre bleue.`, "neutral");
+    } else {
+      ui.setFeedback("Maintiens le bouton micro pendant que tu lis les notes.", "neutral");
+    }
     updateSequenceUI();
   } finally {
     gameStartInProgress = false;
@@ -736,18 +1005,16 @@ function noopDiagnosticAction() {
 }
 
 function boot() {
-  const defaultMinIndex = Math.max(0, TREBLE_NOTES.findIndex((note) => note.id === DEFAULT_MIN_NOTE_ID));
-  const defaultMaxIndexRaw = TREBLE_NOTES.findIndex((note) => note.id === DEFAULT_MAX_NOTE_ID);
-  const defaultMaxIndex = defaultMaxIndexRaw >= defaultMinIndex ? defaultMaxIndexRaw : TREBLE_NOTES.length - 1;
-  ui.setupNoteRange({
-    notes: TREBLE_NOTES,
-    defaultMinIndex,
-    defaultMaxIndex,
-  });
+  selectedClef = ui.getSelectedClef();
+  configureNoteRangeForClef(selectedClef);
   ui.setupNoteCount({
     min: MIN_TOTAL_NOTES,
     max: MAX_TOTAL_NOTES,
     value: DEFAULT_TOTAL_NOTES,
+  });
+  ui.setupPracticeMode({
+    defaultMode: DEFAULT_PRACTICE_MODE,
+    defaultTempo: DEFAULT_DYNAMIC_TEMPO_BPM,
   });
 
   selectedEngine = ui.getSelectedEngine();
@@ -763,6 +1030,11 @@ function boot() {
       selectedEngine = ui.getSelectedEngine();
       updateEngineStatus();
       preloadVoskModelInBackground();
+    },
+    onClefChange: () => {
+      selectedClef = ui.getSelectedClef();
+      configureNoteRangeForClef(selectedClef);
+      ui.refreshNoteRangePreview();
     },
     onMicPress: startPushToTalk,
     onMicRelease: stopPushToTalk,
