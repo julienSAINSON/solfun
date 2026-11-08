@@ -877,6 +877,7 @@ function startWebSpeechContinuous() {
         return;
       }
 
+      ui.setContinuousMicMode(true);
       ui.setFeedback("Micro pret. Parle maintenant.", "success");
     },
   });
@@ -906,6 +907,7 @@ async function startVoskContinuous() {
         return;
       }
 
+      ui.setContinuousMicMode(true);
       ui.setFeedback("Micro pret. Parle maintenant.", "success");
     },
   });
@@ -970,7 +972,7 @@ async function toggleMicListening(shouldEnable) {
   resetSoundTiming();
   resetLiveValidationState();
   resetVoskFinalDedupState();
-  ui.setContinuousMicMode(true);
+  ui.setMicPendingMode();
   ui.setListening(true);
   ui.setFeedback("Activation du micro... attends le message 'Micro pret'.", "neutral");
 
@@ -988,9 +990,6 @@ async function toggleMicListening(shouldEnable) {
     ui.setContinuousMicMode(false);
     return;
   }
-
-  ui.setContinuousMicMode(true);
-  ui.setFeedback("Micro actif. Parle maintenant.", "success");
 
   if (practiceMode === "dynamic" && !dynamicTimeline) {
     startDynamicTimeline();

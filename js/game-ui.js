@@ -432,6 +432,21 @@ export class GameUI {
     this.micToggleWrap?.classList.toggle("listening", Boolean(isEnabled));
   }
 
+  setMicPendingMode() {
+    if (this.micToggleInput) {
+      this.micToggleInput.disabled = false;
+      this.micToggleInput.checked = true;
+    }
+    if (this.micButton) {
+      this.micButton.disabled = false;
+      this.micButton.textContent = "🎤 Micro: activation...";
+    }
+    if (this.micToggleCaption) {
+      this.micToggleCaption.textContent = "Analyse vocale: activation...";
+    }
+    this.micToggleWrap?.classList.add("listening");
+  }
+
   setInlineReplayVisible(isVisible) {
     if (!this.replayInlineButton) {
       return;
