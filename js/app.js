@@ -38,6 +38,7 @@ const VOSK_GRAMMAR_PHRASES = [
   "[unk]",
 ];
 const VOSK_FINAL_DEDUP_WINDOW_MS = 900;
+const CHEETAH_FINAL_DEDUP_WINDOW_MS = 900;
 const VOSK_SILENT_FALLBACK_MS = 3600;
 
 const ui = new GameUI();
@@ -71,6 +72,8 @@ let liveTokenCursor = 0;
 let lastLoggedVoskPartial = "";
 let lastAcceptedVoskFinalText = "";
 let lastAcceptedVoskFinalAtMs = 0;
+let lastAcceptedCheetahFinalText = "";
+let lastAcceptedCheetahFinalAtMs = 0;
 let exerciseFirstCapturedAtMs = null;
 let exerciseLastCapturedAtMs = null;
 let dynamicTimeline = null;
@@ -357,6 +360,11 @@ function resetLiveValidationState() {
 function resetVoskFinalDedupState() {
   lastAcceptedVoskFinalText = "";
   lastAcceptedVoskFinalAtMs = 0;
+}
+
+function resetCheetahFinalDedupState() {
+  lastAcceptedCheetahFinalText = "";
+  lastAcceptedCheetahFinalAtMs = 0;
 }
 
 function registerDetectedSound(rawText) {
@@ -936,11 +944,6 @@ function handleCheetahPartial(payload) {
     registerDetectedSound(partial);
     ui.setFeedback(`J'entends: ${partial}`, "neutral");
   }
-
-  handleRecognitionPayload({
-    text: payload?.text ?? "",
-    alternatives: [{ rank: 1, text: payload?.text ?? "", confidence: null }],
-  });
 }
 
 function handleCheetahFinal(payload) {
@@ -952,6 +955,18 @@ function handleCheetahFinal(payload) {
   if (!normalizedFinal) {
     return;
   }
+
+  const nowMs = performance.now();
+  const isDuplicateFinal =
+    normalizedFinal === lastAcceptedCheetahFinalText &&
+    nowMs - lastAcceptedCheetahFinalAtMs <= CHEETAH_FINAL_DEDUP_WINDOW_MS;
+
+  if (isDuplicateFinal) {
+    return;
+  }
+
+  lastAcceptedCheetahFinalText = normalizedFinal;
+  lastAcceptedCheetahFinalAtMs = nowMs;
 
   registerDetectedSound(payload?.text ?? "");
   handleRecognitionPayload({
@@ -1120,6 +1135,7 @@ async function toggleMicListening(shouldEnable) {
   resetSoundTiming();
   resetLiveValidationState();
   resetVoskFinalDedupState();
+  resetCheetahFinalDedupState();
   ui.setMicPendingMode();
   ui.setListening(true);
   ui.setFeedback("Activation du micro... attends le message 'Micro pret'.", "neutral");
@@ -1203,6 +1219,7 @@ async function startGame() {
     processedWebSpeechFinalChunkIds.clear();
     resetLiveValidationState();
     resetVoskFinalDedupState();
+    resetCheetahFinalDedupState();
     resetExerciseTimingMetrics();
     exerciseSession.setCurrentIndex(0);
 

@@ -93,8 +93,13 @@ export class CheetahRecognitionService {
         },
         {
           base64: this.modelBase64,
+          endpointDurationSec: 0.35,
           enableAutomaticPunctuation: false,
           language: this.language,
+          processErrorCallback: (error) => {
+            this.emitDebug("cheetah-process-failed", { error: String(error) });
+            onError?.({ reason: "process-failed", error });
+          },
         }
       );
     } catch (error) {
@@ -140,10 +145,7 @@ export class CheetahRecognitionService {
           int16[i] = sample < 0 ? sample * 32768 : sample * 32767;
         }
 
-        this.worker.process(int16).catch((error) => {
-          this.emitDebug("cheetah-process-failed", { error: String(error) });
-          onError?.({ reason: "process-failed", error });
-        });
+        this.worker.process(int16).catch(() => {});
       };
 
       this.sourceNode.connect(this.processorNode);
