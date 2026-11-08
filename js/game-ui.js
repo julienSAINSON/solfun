@@ -299,6 +299,10 @@ export class GameUI {
     onDiagnosticListen,
     onDiagnosticReset,
   }) {
+    const triggerMicRelease = () => {
+      onMicRelease();
+    };
+
     this.playButton.addEventListener("click", onPlay);
     this.replayButton.addEventListener("click", onReplay);
     this.replayInlineButton?.addEventListener("click", onReplay);
@@ -313,12 +317,20 @@ export class GameUI {
       event.preventDefault();
       onMicPress();
     });
-    window.addEventListener("pointerup", () => {
-      onMicRelease();
+
+    // Android browsers can miss pointerup on long press / gesture changes.
+    window.addEventListener("pointerup", triggerMicRelease);
+    window.addEventListener("pointercancel", triggerMicRelease);
+    window.addEventListener("mouseup", triggerMicRelease);
+    window.addEventListener("touchend", triggerMicRelease, { passive: true });
+    window.addEventListener("touchcancel", triggerMicRelease, { passive: true });
+    window.addEventListener("blur", triggerMicRelease);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        triggerMicRelease();
+      }
     });
-    window.addEventListener("pointercancel", () => {
-      onMicRelease();
-    });
+
     this.micButton.addEventListener("keydown", (event) => {
       if (event.repeat) {
         return;
