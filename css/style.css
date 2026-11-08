@@ -32,6 +32,23 @@ body {
   overflow-x: hidden;
 }
 
+.app-version-badge {
+  position: fixed;
+  top: 0.7rem;
+  left: 0.7rem;
+  margin: 0;
+  padding: 0.38rem 0.68rem;
+  border-radius: 999px;
+  background: rgba(37, 49, 77, 0.86);
+  color: #fffdf7;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 14px rgba(25, 34, 54, 0.25);
+  z-index: 25;
+  pointer-events: none;
+}
+
 .background-shapes {
   position: fixed;
   inset: 0;
@@ -609,6 +626,13 @@ h2 {
 }
 
 @media (max-width: 560px) {
+  .app-version-badge {
+    top: 0.45rem;
+    left: 0.45rem;
+    font-size: 0.72rem;
+    padding: 0.34rem 0.6rem;
+  }
+
   .progress-meta {
     flex-direction: column;
     gap: 0.35rem;

@@ -23,6 +23,7 @@ const DEFAULT_RANGE_BY_CLEF = {
 };
 
 const VOSK_MODEL_URL = "assets/models/vosk-model-small-fr/model.tar.gz";
+const APP_VERSION_URL = "assets/app-version.json";
 const VOSK_GRAMMAR_PHRASES = [
   ...Array.from(
     new Set(
@@ -175,6 +176,36 @@ function updateEngineStatus() {
   }
 
   ui.setEngineStatus("Moteur: Web Speech du navigateur");
+}
+
+function setAppVersionBadge(versionLabel) {
+  const badge = document.getElementById("app-version-badge");
+  if (!badge) {
+    return;
+  }
+
+  badge.textContent = `Version ${versionLabel}`;
+}
+
+async function loadAndRenderAppVersion() {
+  try {
+    const cacheBuster = `ts=${Date.now()}`;
+    const response = await fetch(`${APP_VERSION_URL}?${cacheBuster}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      setAppVersionBadge("dev");
+      return;
+    }
+
+    const payload = await response.json();
+    const version = String(payload?.version ?? "").trim();
+    setAppVersionBadge(version || "dev");
+  } catch (error) {
+    setAppVersionBadge("dev");
+  }
 }
 
 async function preloadVoskModelInBackground() {
@@ -1066,6 +1097,8 @@ function noopDiagnosticAction() {
 }
 
 function boot() {
+  loadAndRenderAppVersion();
+
   selectedClef = ui.getSelectedClef();
   configureNoteRangeForClef(selectedClef);
   ui.setupNoteCount({

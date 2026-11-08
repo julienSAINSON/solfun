@@ -1,0 +1,42 @@
+name: Bump app version on main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    if: ${{ github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip version bump]') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Increment patch version
+        run: |
+          node -e "const fs=require('fs');const path='assets/app-version.json';const data=JSON.parse(fs.readFileSync(path,'utf8'));const current=String(data.version||'0.0.0').trim();const m=current.match(/^(\\d+)\\.(\\d+)\\.(\\d+)$/);if(!m){throw new Error('Invalid version format in assets/app-version.json: '+current);}const major=Number(m[1]);const minor=Number(m[2]);const patch=Number(m[3])+1;data.version=major+'.'+minor+'.'+patch;fs.writeFileSync(path,JSON.stringify(data,null,2)+'\\n');console.log('New version:',data.version);"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app-version.json
+          if git diff --cached --quiet; then
+            echo "No version change to commit"
+            exit 0
+          fi
+          VERSION=$(node -p "require('./assets/app-version.json').version")
+          git commit -m "chore: bump app version to ${VERSION} [skip version bump]"
+          git push
