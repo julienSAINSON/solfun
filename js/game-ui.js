@@ -311,7 +311,19 @@ export class GameUI {
       });
       this.clefSelect?.addEventListener("change", onClefChange);
     }
-    if (this.micToggleInput) {
+    if (this.micToggleWrap) {
+      this.micToggleWrap.addEventListener("click", (event) => {
+        event.preventDefault();
+
+        if (!this.micToggleInput || this.micToggleInput.disabled) {
+          return;
+        }
+
+        const nextState = !this.micToggleInput.checked;
+        this.micToggleInput.checked = nextState;
+        onMicToggle(nextState);
+      });
+    } else if (this.micToggleInput) {
       this.micToggleInput.addEventListener("change", () => {
         onMicToggle(this.micToggleInput.checked);
       });
@@ -521,6 +533,10 @@ export class GameUI {
     this.micToggleWrap?.classList.toggle("listening", Boolean(isListening));
     if (this.micButton) {
       this.micButton.classList.toggle("listening", Boolean(isListening));
+    }
+
+    if (this.micToggleCaption && this.micToggleInput?.checked && isListening) {
+      this.micToggleCaption.textContent = "Analyse vocale: activation...";
     }
   }
 
