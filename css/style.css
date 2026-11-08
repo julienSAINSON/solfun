@@ -368,6 +368,68 @@ h2 {
   color: #fff;
   font-size: clamp(1rem, 2.8vw, 1.2rem);
 }
+.mic-toggle-wrap {
+  width: min(460px, 100%);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.72rem 0.85rem;
+  border-radius: 14px;
+  border: 2px solid #c8d2eb;
+  background: #ffffff;
+}
+.mic-toggle-caption {
+  color: #355892;
+  font-weight: 800;
+  font-size: 0.98rem;
+}
+.mic-toggle {
+  position: relative;
+  width: 64px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+.mic-toggle input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+}
+.mic-toggle-track {
+  position: relative;
+  width: 64px;
+  height: 36px;
+  border-radius: 999px;
+  background: #c8d2eb;
+  border: 2px solid #b4bfdc;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.mic-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(30, 38, 66, 0.25);
+  transition: transform 0.2s ease;
+}
+.mic-toggle input:checked + .mic-toggle-track {
+  background: #23be74;
+  border-color: #18a15f;
+}
+.mic-toggle input:checked + .mic-toggle-track::after {
+  transform: translateX(28px);
+}
+.mic-toggle-wrap.listening {
+  border-color: #18a15f;
+  background: #effcf4;
+}
 
 .listening-indicator {
   margin: 0.7rem 0 0;
@@ -636,6 +698,9 @@ h2 {
   .progress-meta {
     flex-direction: column;
     gap: 0.35rem;
+  }
+  .mic-toggle-caption {
+    font-size: 0.92rem;
   }
 
   .note-buttons {

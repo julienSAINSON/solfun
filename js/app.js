@@ -947,12 +947,14 @@ async function startActiveEngineContinuous() {
   return startWebSpeechContinuous();
 }
 
-async function toggleMicListening() {
+async function toggleMicListening(shouldEnable) {
   if (!exerciseActive || micStartInProgress) {
     return;
   }
 
-  if (micPressActive) {
+  const targetEnable = typeof shouldEnable === "boolean" ? shouldEnable : !micPressActive;
+
+  if (!targetEnable) {
     micPressToken += 1;
     micPressActive = false;
     stopAllRecognition();
@@ -1043,12 +1045,12 @@ async function startGame() {
     resetExerciseTimingMetrics();
     exerciseSession.setCurrentIndex(0);
 
-    ui.setContinuousMicMode(true);
+    ui.setContinuousMicMode(false);
     resetSoundTiming();
     if (practiceMode === "dynamic") {
       ui.setFeedback(`Mode dynamique (${dynamicTempoBpm} BPM): suis la barre bleue.`, "neutral");
     } else {
-      ui.setFeedback("Appuie sur le micro pour activer ou couper l'ecoute.", "neutral");
+      ui.setFeedback("Active l'interrupteur micro pour lancer ou couper l'ecoute.", "neutral");
     }
     updateSequenceUI();
   } finally {

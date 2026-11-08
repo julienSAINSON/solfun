@@ -28,7 +28,9 @@ export class GameUI {
     this.rangeStaffSvg = document.getElementById("range-staff-svg");
     this.noteCountInput = document.getElementById("note-count-input");
     this.noteCountValue = document.getElementById("note-count-value");
-    this.micButton = document.getElementById("mic-btn");
+    this.micToggleInput = document.getElementById("mic-toggle-input");
+    this.micToggleCaption = document.getElementById("mic-toggle-caption");
+    this.micToggleWrap = this.micToggleInput?.closest(".mic-toggle-wrap") ?? null;
     this.replayInlineButton = document.getElementById("replay-inline-btn");
     this.debugToggleButton = document.getElementById("debug-toggle-btn");
     this.diagnosticToggleButton = document.getElementById("diagnostic-toggle-btn");
@@ -308,20 +310,8 @@ export class GameUI {
       });
       this.clefSelect?.addEventListener("change", onClefChange);
     }
-    this.micButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      onMicToggle();
-    });
-
-    this.micButton.addEventListener("keydown", (event) => {
-      if (event.repeat) {
-        return;
-      }
-
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        onMicToggle();
-      }
+    this.micToggleInput?.addEventListener("change", () => {
+      onMicToggle(this.micToggleInput.checked);
     });
     this.debugToggleButton.addEventListener("click", onToggleDebug);
     this.diagnosticToggleButton.addEventListener("click", onToggleDiagnostic);
@@ -364,20 +354,38 @@ export class GameUI {
 
   showVoiceFallback(message) {
     this.fallbackPanel.hidden = false;
-    this.micButton.disabled = true;
-    this.micButton.textContent = "Micro indisponible";
+    if (this.micToggleInput) {
+      this.micToggleInput.checked = false;
+      this.micToggleInput.disabled = true;
+    }
+    if (this.micToggleCaption) {
+      this.micToggleCaption.textContent = "Analyse vocale indisponible";
+    }
+    this.micToggleWrap?.classList.remove("listening");
     this.setFeedback(message, "neutral");
   }
 
   enableMicMode() {
     this.fallbackPanel.hidden = false;
-    this.micButton.disabled = false;
-    this.micButton.textContent = "🎤 Micro: OFF (appuie pour activer)";
+    if (this.micToggleInput) {
+      this.micToggleInput.disabled = false;
+      this.micToggleInput.checked = false;
+    }
+    if (this.micToggleCaption) {
+      this.micToggleCaption.textContent = "Analyse vocale: OFF";
+    }
+    this.micToggleWrap?.classList.remove("listening");
   }
 
   setContinuousMicMode(isEnabled) {
-    this.micButton.disabled = false;
-    this.micButton.textContent = isEnabled ? "🎤 Micro: ON (appuie pour couper)" : "🎤 Micro: OFF (appuie pour activer)";
+    if (this.micToggleInput) {
+      this.micToggleInput.disabled = false;
+      this.micToggleInput.checked = Boolean(isEnabled);
+    }
+    if (this.micToggleCaption) {
+      this.micToggleCaption.textContent = isEnabled ? "Analyse vocale: ON" : "Analyse vocale: OFF";
+    }
+    this.micToggleWrap?.classList.toggle("listening", Boolean(isEnabled));
   }
 
   setInlineReplayVisible(isVisible) {
@@ -478,8 +486,7 @@ export class GameUI {
 
   setListening(isListening) {
     this.listeningIndicator.hidden = !isListening;
-    this.micButton.classList.toggle("listening", isListening);
-    this.micButton.textContent = isListening ? "🎤 Relache pour couper" : "🎤 Maintiens pour parler";
+    this.micToggleWrap?.classList.toggle("listening", Boolean(isListening));
   }
 
   setSoundIntervalText(value) {
