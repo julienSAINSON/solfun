@@ -372,7 +372,7 @@ export class GameUI {
       return;
     }
 
-    const nextEngine = engine === "webspeech" ? "webspeech" : "vosk";
+    const nextEngine = ["webspeech", "vosk", "cheetah"].includes(engine) ? engine : "vosk";
     this.engineSelect.value = nextEngine;
   }
 

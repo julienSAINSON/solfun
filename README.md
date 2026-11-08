@@ -16,9 +16,27 @@ Solfun est un mini-jeu web pour apprendre la lecture des notes (DO, RE, MI, FA, 
 Solfun propose deux moteurs de reconnaissance pour l'exercice continu:
 
 - `Web Speech` (navigateur)
+- `Cheetah Web (offline local)`
 - `Vosk local (prototype)`
 
 Le choix du moteur se fait sur l'ecran d'accueil.
+
+## Cheetah Web (offline local)
+
+Le moteur Cheetah fonctionne en local dans le navigateur, mais demande:
+
+- un `AccessKey` Picovoice valide,
+- un modele Cheetah encode en base64.
+
+Configuration:
+
+1. Ouvrir `js/cheetah-config.js`.
+2. Renseigner:
+
+- `CHEETAH_ACCESS_KEY`
+- `CHEETAH_MODEL_BASE64`
+
+Sans cette configuration, Solfun affiche un message explicite et repasse en mode de secours.
 
 ## Prototype Vosk local
 

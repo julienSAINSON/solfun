@@ -1,6 +1,8 @@
 import { GameUI } from "./game-ui.js";
 import { SpeechRecognitionService } from "./speech-recognition.js";
 import { VoskRecognitionService } from "./vosk-recognition.js";
+import { CheetahRecognitionService } from "./cheetah-recognition.js";
+import { CHEETAH_ACCESS_KEY, CHEETAH_MODEL_BASE64 } from "./cheetah-config.js";
 import { generateRoundNotes, TREBLE_NOTES, BASS_NOTES } from "./note-generator.js";
 import { ContinuousReadingSession } from "./continuous-reading-session.js";
 import { extractBestNoteTokenSequence, normalizeSpeechText, NOTE_ALIAS_MAP } from "./voice-note-matcher.js";
@@ -45,6 +47,11 @@ const voskService = new VoskRecognitionService({
   sampleRate: 16000,
   grammarPhrases: VOSK_GRAMMAR_PHRASES,
 });
+const cheetahService = new CheetahRecognitionService({
+  accessKey: CHEETAH_ACCESS_KEY,
+  modelBase64: CHEETAH_MODEL_BASE64,
+  language: "fr",
+});
 
 let speechDebugEnabled = false;
 let exerciseSession = null;
@@ -71,6 +78,28 @@ let voskSilentWatchdogId = null;
 let voskReceivedSpeechSignal = false;
 
 const processedWebSpeechFinalChunkIds = new Set();
+
+function isAndroidDevice() {
+  return /android/i.test(String(navigator?.userAgent ?? ""));
+}
+
+function enforceAndroidEnginePolicy() {
+  if (!isAndroidDevice()) {
+    return;
+  }
+
+  const engineSelect = document.getElementById("engine-select");
+  const voskOption = engineSelect?.querySelector('option[value="vosk"]');
+  if (voskOption) {
+    voskOption.disabled = true;
+  }
+
+  if (ui.getSelectedEngine() === "vosk") {
+    ui.setSelectedEngine(cheetahService.hasConfiguration() ? "cheetah" : "webspeech");
+  }
+
+  selectedEngine = ui.getSelectedEngine();
+}
 
 function formatDebugClock(isoTimestamp) {
   const date = new Date(isoTimestamp);
@@ -135,6 +164,15 @@ function writeSpeechDebugEvent(event) {
     "vosk-started": `[${clock}] vosk-started`,
     "vosk-start-failed": `[${clock}] vosk-start-failed`,
     "vosk-stop": `[${clock}] vosk-stop`,
+    "cheetah-started": `[${clock}] cheetah-started`,
+    "cheetah-stop": `[${clock}] cheetah-stop`,
+    "cheetah-partial": `[${clock}] cheetah-partial: "${event.text ?? ""}"`,
+    "cheetah-final": `[${clock}] cheetah-final: "${event.text ?? ""}"`,
+    "cheetah-init-failed": `[${clock}] cheetah-init-failed`,
+    "cheetah-start-failed": `[${clock}] cheetah-start-failed`,
+    "cheetah-process-failed": `[${clock}] cheetah-process-failed`,
+    "cheetah-module-load-failed": `[${clock}] cheetah-module-load-failed`,
+    "cheetah-mic-failed": `[${clock}] cheetah-mic-failed`,
   };
 
   ui.appendSpeechDebugLine(linesByEvent[event.event] ?? `[${clock}] ${event.event}`);
@@ -157,15 +195,32 @@ function toggleSpeechDebugMode() {
     ui.appendSpeechDebugLine("Mode debug actif");
     speechService.setDebugHandler(writeSpeechDebugEvent);
     voskService.setDebugHandler(writeSpeechDebugEvent);
+    cheetahService.setDebugHandler(writeSpeechDebugEvent);
     return;
   }
 
   lastLoggedVoskPartial = "";
   speechService.setDebugHandler(null);
   voskService.setDebugHandler(null);
+  cheetahService.setDebugHandler(null);
 }
 
 function updateEngineStatus() {
+  if (isAndroidDevice() && selectedEngine === "webspeech") {
+    ui.setEngineStatus("Android detecte: Web Speech actif (fallback mobile)");
+    return;
+  }
+
+  if (selectedEngine === "cheetah") {
+    if (!cheetahService.hasConfiguration()) {
+      ui.setEngineStatus("Moteur: Cheetah web (configuration manquante dans js/cheetah-config.js)");
+      return;
+    }
+
+    ui.setEngineStatus("Moteur: Cheetah web (offline local, AccessKey requis)");
+    return;
+  }
+
   if (selectedEngine === "vosk") {
     const voskAvailable = Boolean(window.Vosk);
     const modelState = voskService.isModelReady() ? "modele pret" : "modele non charge";
@@ -207,6 +262,11 @@ async function loadAndRenderAppVersion() {
 }
 
 async function preloadVoskModelInBackground() {
+  if (isAndroidDevice()) {
+    updateEngineStatus();
+    return;
+  }
+
   if (selectedEngine !== "vosk") {
     return;
   }
@@ -234,6 +294,7 @@ function stopAllRecognition() {
   clearVoskSilentWatchdog();
   speechService.stop();
   voskService.stop();
+  cheetahService.stop();
   ui.setListening(false);
 }
 
@@ -865,6 +926,49 @@ function handleVoskError(error) {
   }
 }
 
+function handleCheetahPartial(payload) {
+  if (!exerciseActive) {
+    return;
+  }
+
+  const partial = normalizeSpeechText(payload?.text ?? "");
+  if (partial) {
+    registerDetectedSound(partial);
+    ui.setFeedback(`J'entends: ${partial}`, "neutral");
+  }
+
+  handleRecognitionPayload({
+    text: payload?.text ?? "",
+    alternatives: [{ rank: 1, text: payload?.text ?? "", confidence: null }],
+  });
+}
+
+function handleCheetahFinal(payload) {
+  if (!exerciseActive) {
+    return;
+  }
+
+  const normalizedFinal = normalizeSpeechText(payload?.text ?? "");
+  if (!normalizedFinal) {
+    return;
+  }
+
+  registerDetectedSound(payload?.text ?? "");
+  handleRecognitionPayload({
+    text: payload?.text ?? "",
+    alternatives: [{ rank: 1, text: payload?.text ?? "", confidence: null }],
+  }, { isFinal: true });
+}
+
+function handleCheetahError(error) {
+  const hardFailureReasons = ["missing-config", "unsupported", "init-failed", "mic-permission-failed", "start-failed", "process-failed"];
+  if (hardFailureReasons.includes(error.reason)) {
+    exerciseActive = false;
+    ui.setFeedback("Erreur Cheetah pendant l'ecoute continue.", "error");
+    ui.showVoiceFallback("Mode boutons active.");
+  }
+}
+
 function startWebSpeechContinuous() {
   ui.setListening(true);
 
@@ -937,9 +1041,53 @@ async function startVoskContinuous() {
   return true;
 }
 
+async function startCheetahContinuous() {
+  ui.setListening(true);
+  ui.setFeedback("Activation du micro Cheetah...", "neutral");
+
+  const result = await cheetahService.startContinuous({
+    onPartial: handleCheetahPartial,
+    onFinal: handleCheetahFinal,
+    onError: handleCheetahError,
+    onReady: () => {
+      if (!exerciseActive || !micPressActive) {
+        return;
+      }
+
+      ui.setContinuousMicMode(true);
+      ui.setFeedback("Micro pret. Parle maintenant.", "success");
+    },
+  });
+
+  if (!result.ok) {
+    ui.setListening(false);
+    ui.setContinuousMicMode(false);
+
+    if (result.reason === "missing-config") {
+      ui.setFeedback("Cheetah non configure. Renseigne js/cheetah-config.js.", "error");
+      return false;
+    }
+
+    if (result.reason === "unsupported") {
+      ui.setFeedback("Cheetah non supporte sur ce navigateur.", "error");
+      return false;
+    }
+
+    ui.setFeedback("Impossible de demarrer Cheetah.", "error");
+    return false;
+  }
+
+  ui.setFeedback("Lis les notes de gauche a droite.", "neutral");
+  return true;
+}
+
 async function startActiveEngineContinuous() {
   if (!exerciseActive) {
     return false;
+  }
+
+  if (selectedEngine === "cheetah") {
+    return startCheetahContinuous();
   }
 
   if (selectedEngine === "vosk") {
@@ -1005,6 +1153,7 @@ async function startGame() {
   gameStartInProgress = true;
 
   try {
+    enforceAndroidEnginePolicy();
     selectedEngine = ui.getSelectedEngine();
     selectedClef = ui.getSelectedClef();
     practiceMode = ui.getSelectedPracticeMode();
@@ -1023,6 +1172,18 @@ async function startGame() {
     if (selectedEngine === "webspeech" && !speechService.isSupported()) {
       ui.showVoiceFallback("Ton navigateur ne supporte pas Web Speech en continu.");
       return;
+    }
+
+    if (selectedEngine === "cheetah") {
+      const supported = await cheetahService.isSupported();
+      if (!supported) {
+        ui.showVoiceFallback("Cheetah web indisponible ici. Essaie Web Speech.");
+        return;
+      }
+      if (!cheetahService.hasConfiguration()) {
+        ui.showVoiceFallback("Cheetah non configure. Renseigne js/cheetah-config.js.");
+        return;
+      }
     }
 
     if (selectedEngine === "vosk" && !voskService.isSupported()) {
@@ -1077,6 +1238,7 @@ function boot() {
     defaultTempo: DEFAULT_DYNAMIC_TEMPO_BPM,
   });
 
+  enforceAndroidEnginePolicy();
   selectedEngine = ui.getSelectedEngine();
   updateEngineStatus();
   ui.setSpeechDebugMode(speechDebugEnabled);
@@ -1087,6 +1249,7 @@ function boot() {
     onPlay: startGame,
     onReplay: startGame,
     onEngineChange: () => {
+      enforceAndroidEnginePolicy();
       selectedEngine = ui.getSelectedEngine();
       updateEngineStatus();
       preloadVoskModelInBackground();
