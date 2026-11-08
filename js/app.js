@@ -35,7 +35,6 @@ const VOSK_GRAMMAR_PHRASES = [
   ),
   "[unk]",
 ];
-const MIC_RELEASE_GRACE_MS = 280;
 const VOSK_FINAL_DEDUP_WINDOW_MS = 900;
 const VOSK_SILENT_FALLBACK_MS = 3600;
 
@@ -63,7 +62,6 @@ let secondSoundAtMs = null;
 let voskPreloadInFlight = false;
 let liveTokenCursor = 0;
 let lastLoggedVoskPartial = "";
-let pendingMicStopTimeoutId = null;
 let lastAcceptedVoskFinalText = "";
 let lastAcceptedVoskFinalAtMs = 0;
 let exerciseFirstCapturedAtMs = null;
@@ -283,23 +281,6 @@ function armVoskSilentWatchdog() {
       ui.setFeedback("Echec de la bascule auto vers Web Speech.", "error");
     }
   }, VOSK_SILENT_FALLBACK_MS);
-}
-
-function clearPendingMicStop() {
-  if (pendingMicStopTimeoutId === null) {
-    return;
-  }
-
-  window.clearTimeout(pendingMicStopTimeoutId);
-  pendingMicStopTimeoutId = null;
-}
-
-function isSelectedEngineRunning() {
-  if (selectedEngine === "vosk") {
-    return Boolean(voskService.started);
-  }
-
-  return Boolean(speechService.isActive);
 }
 
 function resetSoundTiming() {
@@ -966,17 +947,17 @@ async function startActiveEngineContinuous() {
   return startWebSpeechContinuous();
 }
 
-async function startPushToTalk() {
-  if (!exerciseActive || micPressActive || micStartInProgress) {
+async function toggleMicListening() {
+  if (!exerciseActive || micStartInProgress) {
     return;
   }
 
-  clearPendingMicStop();
-
-  if (isSelectedEngineRunning()) {
-    micPressActive = true;
-    ui.setListening(true);
-    ui.setFeedback("Micro repris. Parle en gardant le bouton appuye.", "neutral");
+  if (micPressActive) {
+    micPressToken += 1;
+    micPressActive = false;
+    stopAllRecognition();
+    ui.setContinuousMicMode(false);
+    ui.setFeedback("Micro en pause. Active le micro pour reprendre.", "neutral");
     return;
   }
 
@@ -1001,34 +982,17 @@ async function startPushToTalk() {
   if (!started) {
     micPressActive = false;
     ui.setListening(false);
+    ui.setContinuousMicMode(false);
     return;
   }
+
+  ui.setContinuousMicMode(true);
+  ui.setFeedback("Micro actif. Parle maintenant.", "success");
 
   if (practiceMode === "dynamic" && !dynamicTimeline) {
     startDynamicTimeline();
     ui.setFeedback(`Mode dynamique (${dynamicTempoBpm} BPM): suis la barre bleue.`, "neutral");
   }
-}
-
-function stopPushToTalk() {
-  if (!micPressActive && !micStartInProgress) {
-    return;
-  }
-
-  micPressToken += 1;
-  micPressActive = false;
-  ui.setFeedback("Micro coupe. Maintiens le bouton pour reprendre.", "neutral");
-
-  clearPendingMicStop();
-  pendingMicStopTimeoutId = window.setTimeout(() => {
-    pendingMicStopTimeoutId = null;
-
-    if (micPressActive || micStartInProgress) {
-      return;
-    }
-
-    stopAllRecognition();
-  }, MIC_RELEASE_GRACE_MS);
 }
 
 async function startGame() {
@@ -1046,12 +1010,12 @@ async function startGame() {
     updateEngineStatus();
     ui.clearSpeechDebugLog();
     ui.clearDiagnosticLog();
-    clearPendingMicStop();
     stopDynamicTimeline();
 
     stopAllRecognition();
     ui.showScreen("game");
     ui.enableMicMode();
+    ui.setContinuousMicMode(false);
     ui.setInlineReplayVisible(false);
 
     if (selectedEngine === "webspeech" && !speechService.isSupported()) {
@@ -1084,7 +1048,7 @@ async function startGame() {
     if (practiceMode === "dynamic") {
       ui.setFeedback(`Mode dynamique (${dynamicTempoBpm} BPM): suis la barre bleue.`, "neutral");
     } else {
-      ui.setFeedback("Maintiens le bouton micro pendant que tu lis les notes.", "neutral");
+      ui.setFeedback("Appuie sur le micro pour activer ou couper l'ecoute.", "neutral");
     }
     updateSequenceUI();
   } finally {
@@ -1130,8 +1094,7 @@ function boot() {
       configureNoteRangeForClef(selectedClef);
       ui.refreshNoteRangePreview();
     },
-    onMicPress: startPushToTalk,
-    onMicRelease: stopPushToTalk,
+    onMicToggle: toggleMicListening,
     onToggleDebug: toggleSpeechDebugMode,
     onToggleDiagnostic: noopDiagnosticAction,
     onDiagnosticListen: noopDiagnosticAction,

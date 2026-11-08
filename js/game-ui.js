@@ -291,18 +291,13 @@ export class GameUI {
     onReplay,
     onEngineChange,
     onClefChange,
-    onMicPress,
-    onMicRelease,
+    onMicToggle,
     onFallbackAnswer,
     onToggleDebug,
     onToggleDiagnostic,
     onDiagnosticListen,
     onDiagnosticReset,
   }) {
-    const triggerMicRelease = () => {
-      onMicRelease();
-    };
-
     this.playButton.addEventListener("click", onPlay);
     this.replayButton.addEventListener("click", onReplay);
     this.replayInlineButton?.addEventListener("click", onReplay);
@@ -313,22 +308,9 @@ export class GameUI {
       });
       this.clefSelect?.addEventListener("change", onClefChange);
     }
-    this.micButton.addEventListener("pointerdown", (event) => {
+    this.micButton.addEventListener("click", (event) => {
       event.preventDefault();
-      onMicPress();
-    });
-
-    // Android browsers can miss pointerup on long press / gesture changes.
-    window.addEventListener("pointerup", triggerMicRelease);
-    window.addEventListener("pointercancel", triggerMicRelease);
-    window.addEventListener("mouseup", triggerMicRelease);
-    window.addEventListener("touchend", triggerMicRelease, { passive: true });
-    window.addEventListener("touchcancel", triggerMicRelease, { passive: true });
-    window.addEventListener("blur", triggerMicRelease);
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        triggerMicRelease();
-      }
+      onMicToggle();
     });
 
     this.micButton.addEventListener("keydown", (event) => {
@@ -338,13 +320,7 @@ export class GameUI {
 
       if (event.key === " " || event.key === "Enter") {
         event.preventDefault();
-        onMicPress();
-      }
-    });
-    this.micButton.addEventListener("keyup", (event) => {
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        onMicRelease();
+        onMicToggle();
       }
     });
     this.debugToggleButton.addEventListener("click", onToggleDebug);
@@ -396,12 +372,12 @@ export class GameUI {
   enableMicMode() {
     this.fallbackPanel.hidden = false;
     this.micButton.disabled = false;
-    this.micButton.textContent = "🎤 Ecouter ma reponse";
+    this.micButton.textContent = "🎤 Micro: OFF (appuie pour activer)";
   }
 
   setContinuousMicMode(isEnabled) {
     this.micButton.disabled = false;
-    this.micButton.textContent = isEnabled ? "🎤 Maintiens pour parler" : "🎤 Micro en pause";
+    this.micButton.textContent = isEnabled ? "🎤 Micro: ON (appuie pour couper)" : "🎤 Micro: OFF (appuie pour activer)";
   }
 
   setInlineReplayVisible(isVisible) {
