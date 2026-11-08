@@ -534,10 +534,6 @@ export class GameUI {
     if (this.micButton) {
       this.micButton.classList.toggle("listening", Boolean(isListening));
     }
-
-    if (this.micToggleCaption && this.micToggleInput?.checked && isListening) {
-      this.micToggleCaption.textContent = "Analyse vocale: activation...";
-    }
   }
 
   setSoundIntervalText(value) {

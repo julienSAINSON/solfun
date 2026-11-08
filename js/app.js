@@ -970,6 +970,7 @@ async function toggleMicListening(shouldEnable) {
   resetSoundTiming();
   resetLiveValidationState();
   resetVoskFinalDedupState();
+  ui.setContinuousMicMode(true);
   ui.setListening(true);
   ui.setFeedback("Activation du micro... attends le message 'Micro pret'.", "neutral");
 
